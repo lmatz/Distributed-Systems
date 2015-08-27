@@ -1,4 +1,4 @@
-package shardmaster
+package shardmaster 
 
 import "testing"
 import "runtime"
@@ -34,6 +34,7 @@ func cleanup(sma []*ShardMaster) {
 //
 func check(t *testing.T, groups []int64, ck *Clerk) {
 	c := ck.Query(-1)
+
 	if len(c.Groups) != len(groups) {
 		t.Fatalf("wanted %v groups, got %v", len(groups), len(c.Groups))
 	}
@@ -99,10 +100,16 @@ func TestBasic(t *testing.T) {
 
 	fmt.Printf("Test: Basic leave/join ...\n")
 
+	// fmt.Printf("!!!\n")
+
 	cfa := make([]Config, 6)
 	cfa[0] = ck.Query(-1)
 
+	// fmt.Printf("Query 1\n")
+
 	check(t, []int64{}, ck)
+
+	// fmt.Printf("check 1\n")
 
 	var gid1 int64 = 1
 	ck.Join(gid1, []string{"x", "y", "z"})

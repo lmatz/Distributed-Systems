@@ -6,11 +6,15 @@ import "fmt"
 
 import "crypto/rand"
 import "math/big"
+import "strconv"
+import "time"
 
 
 type Clerk struct {
 	vs *viewservice.Clerk
 	// Your declarations here
+	currentView viewservice.View
+	id string
 }
 
 // this may come in handy.
@@ -26,6 +30,8 @@ func MakeClerk(vshost string, me string) *Clerk {
 	ck.vs = viewservice.MakeClerk(me, vshost)
 	// Your ck.* initializations here
 
+	ck.currentView = viewservice.View{0,"",""}
+	ck.id = strconv.FormatInt(nrand(),10)
 	return ck
 }
 
@@ -64,6 +70,15 @@ func call(srv string, rpcname string,
 	return false
 }
 
+
+func (ck *Clerk) updateView() {
+	view, err := ck.vs.Ping(ck.currentView.Viewnum)
+	if err!=nil {
+		return
+	}
+	ck.currentView = view
+}
+
 //
 // fetch a key's value from the current primary;
 // if they key has never been set, return "".
@@ -74,6 +89,21 @@ func call(srv string, rpcname string,
 func (ck *Clerk) Get(key string) string {
 
 	// Your code here.
+	if ck.currentView.Viewnum == 0 {
+		ck.updateView()
+	}
+
+	args := &GetArgs{key}
+	var reply GetReply
+
+	for {
+		ok := call(ck.currentView.Primary,"PBServer.Get",args,&reply)
+		if ok  {
+			return reply.Value
+		}
+		time.Sleep(viewservice.PingInterval)
+		ck.updateView()
+	}
 
 	return "???"
 }
@@ -81,9 +111,29 @@ func (ck *Clerk) Get(key string) string {
 //
 // send a Put or Append RPC
 //
-func (ck *Clerk) PutAppend(key string, value string, op string) {
+func (ck *Clerk) PutAppend(key string, value string, op string) string {
 
 	// Your code here.
+	if ck.currentView.Viewnum == 0 {
+		ck.updateView()
+	}
+
+	args := &PutAppendArgs{key,value,op,strconv.FormatInt(nrand(), 10),ck.id}
+	var reply PutAppendReply
+
+	for {
+		ok := call(ck.currentView.Primary,"PBServer.PutAppend",args,&reply)
+		// fmt.Printf("after call")
+		if ok  {
+			// fmt.Printf("ok")
+			return reply.PreviousValue
+		}
+		// fmt.Printf("not ok")
+		time.Sleep(viewservice.PingInterval)
+		ck.updateView()
+		// fmt.Printf("In the putappend loop")
+	}
+
 }
 
 //

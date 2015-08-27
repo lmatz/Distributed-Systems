@@ -6,9 +6,13 @@ import "math/big"
 
 import "fmt"
 
+import "strconv"
+import "time"
+
 type Clerk struct {
 	servers []string
 	// You will have to modify this struct.
+	me string
 }
 
 func nrand() int64 {
@@ -22,6 +26,7 @@ func MakeClerk(servers []string) *Clerk {
 	ck := new(Clerk)
 	ck.servers = servers
 	// You'll have to add code here.
+	ck.me = strconv.FormatInt(nrand(),10)
 	return ck
 }
 
@@ -66,6 +71,21 @@ func call(srv string, rpcname string,
 //
 func (ck *Clerk) Get(key string) string {
 	// You will have to modify this function.
+
+	arg := GetArgs{Key:key, UID:nrand(), Me:ck.me}
+	var reply GetReply
+	index := 0
+
+	for {
+		succeed := call(ck.servers[index], "KVPaxos.Get", arg, &reply)
+		if succeed {
+			return reply.Value
+		}
+		time.Sleep(time.Second * 2)
+		index = (index + 1) % len(ck.servers)
+	}
+
+
 	return ""
 }
 
@@ -74,6 +94,21 @@ func (ck *Clerk) Get(key string) string {
 //
 func (ck *Clerk) PutAppend(key string, value string, op string) {
 	// You will have to modify this function.
+	arg := PutAppendArgs{Key:key, Value:value, Op:op, UID:nrand(), Me:ck.me}
+	var reply PutAppendReply
+
+	index := 0
+
+	for {
+		succeed := call(ck.servers[index], "KVPaxos.PutAppend", arg, &reply)
+		if succeed {
+			return 
+		}
+		time.Sleep(time.Second * 2)
+		index = (index + 1) % len(ck.servers)
+	}
+
+	return 
 }
 
 func (ck *Clerk) Put(key string, value string) {

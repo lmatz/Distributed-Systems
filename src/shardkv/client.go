@@ -1,4 +1,4 @@
-package shardkv
+package shardkv 
 
 import "shardmaster"
 import "net/rpc"
@@ -8,11 +8,15 @@ import "fmt"
 import "crypto/rand"
 import "math/big"
 
+import "strconv"
+
 type Clerk struct {
 	mu     sync.Mutex // one RPC at a time
 	sm     *shardmaster.Clerk
 	config shardmaster.Config
 	// You'll have to modify Clerk.
+	me string
+	seqnum int64
 }
 
 func nrand() int64 {
@@ -26,6 +30,8 @@ func MakeClerk(shardmasters []string) *Clerk {
 	ck := new(Clerk)
 	ck.sm = shardmaster.MakeClerk(shardmasters)
 	// You'll have to modify MakeClerk.
+	ck.me = strconv.FormatInt(nrand(),10)
+	ck.seqnum = 0
 	return ck
 }
 
@@ -87,21 +93,30 @@ func (ck *Clerk) Get(key string) string {
 	defer ck.mu.Unlock()
 
 	// You'll have to modify Get().
+	ck.seqnum ++
+	times := 1
+
 
 	for {
+
 		shard := key2shard(key)
 
 		gid := ck.config.Shards[shard]
 
 		servers, ok := ck.config.Groups[gid]
 
+
 		if ok {
 			// try each server in the shard's replication group.
+			fmt.Println("client:",ck.me," Get:  key",key," gid:",gid," times:",times)
+		times++
+
 			for _, srv := range servers {
-				args := &GetArgs{}
-				args.Key = key
+				args := &GetArgs{Key:key,Me:ck.me,SeqNum:ck.seqnum}
+				args.Me = ck.me
 				var reply GetReply
 				ok := call(srv, "ShardKV.Get", args, &reply)
+				fmt.Println("Get ok:",ok," err:",reply.Err)
 				if ok && (reply.Err == OK || reply.Err == ErrNoKey) {
 					return reply.Value
 				}
@@ -116,6 +131,8 @@ func (ck *Clerk) Get(key string) string {
 		// ask master for a new configuration.
 		ck.config = ck.sm.Query(-1)
 	}
+
+	return ""
 }
 
 // send a Put or Append request.
@@ -124,23 +141,36 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 	defer ck.mu.Unlock()
 
 	// You'll have to modify PutAppend().
+	ck.seqnum ++
+
+	// magic := nrand()
+	times := 1
 
 	for {
+
+		// fmt.Println("ck put")
 		shard := key2shard(key)
 
 		gid := ck.config.Shards[shard]
 
 		servers, ok := ck.config.Groups[gid]
 
+		
+
 		if ok {
 			// try each server in the shard's replication group.
+			fmt.Println("client:",ck.me," PutAppend: ",op," key",key," value",value," gid:",gid," times:",times)
+			times++
 			for _, srv := range servers {
 				args := &PutAppendArgs{}
 				args.Key = key
 				args.Value = value
 				args.Op = op
+				args.SeqNum = ck.seqnum
+				args.Me = ck.me
 				var reply PutAppendReply
 				ok := call(srv, "ShardKV.PutAppend", args, &reply)
+				fmt.Println("Get ok:",ok," err:",reply.Err)
 				if ok && reply.Err == OK {
 					return
 				}

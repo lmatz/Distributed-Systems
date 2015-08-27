@@ -386,9 +386,14 @@ func TestUnreliable(t *testing.T) {
 	fmt.Printf("Test: Basic put/get, unreliable ...\n")
 
 	ck.Put("a", "aa")
+
+	fmt.Printf("After Put1")
+
 	check(t, ck, "a", "aa")
 
 	cka[1].Put("a", "aaa")
+
+	fmt.Printf("After Put2")
 
 	check(t, cka[2], "a", "aaa")
 	check(t, cka[1], "a", "aaa")
@@ -418,6 +423,7 @@ func TestUnreliable(t *testing.T) {
 				time.Sleep(100 * time.Millisecond)
 				if myck.Get(key) != vv {
 					t.Fatalf("wrong value")
+					t.Fatalf("get : %d and vv : %d",myck.Get(key),vv)
 				}
 				if myck.Get(key) != vv {
 					t.Fatalf("wrong value")

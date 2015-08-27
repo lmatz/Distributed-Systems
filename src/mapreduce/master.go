@@ -30,5 +30,81 @@ func (mr *MapReduce) KillWorkers() *list.List {
 
 func (mr *MapReduce) RunMaster() *list.List {
 	// Your code here
+	var mapChan, reduceChan = make(chan int,mr.nMap), make(chan int,mr.nReduce)
+
+	var send_map = func (worker string, ind int) bool {
+		var jobArgs DoJobArgs
+		var reply DoJobReply
+		jobArgs.NumOtherPhase = mr.nReduce;
+		jobArgs.Operation = Map
+		jobArgs.File = mr.file
+		jobArgs.JobNumber = ind
+		return call(worker, "Worker.DoJob", jobArgs, &reply)
+	}
+
+	var send_reduce = func (worker string, ind int) bool {
+		var jobArgs DoJobArgs
+		var reply DoJobReply
+		jobArgs.NumOtherPhase = mr.nMap
+		jobArgs.Operation = Reduce
+		jobArgs.File = mr.file
+		jobArgs.JobNumber = ind
+		return call(worker, "Worker.DoJob", jobArgs, &reply)
+	}
+
+	for i := 0 ; i<mr.nMap; i++ {
+		go func(ind int) {
+			for {
+				var worker string
+				var ok bool
+				select {
+				case worker = <-mr.idleChannel:
+					ok = send_map(worker,ind)
+				case worker = <-mr.registerChannel:
+					ok = send_map(worker,ind)
+				}
+				if (ok) {
+					mapChan <- ind
+					mr.idleChannel <- worker
+					return 
+				}
+			}
+		}(i)
+	}
+
+	for i := 0; i < mr.nMap; i++{
+		<- mapChan
+	}
+
+	fmt.Println("Map is Done")
+
+	for i := 0; i < mr.nReduce; i++{
+		go func(ind int){
+			for {
+				var worker string
+				var ok = false
+				select {
+				case worker = <- mr.idleChannel:
+					ok = send_reduce(worker, ind)
+				case worker = <- mr.registerChannel:
+					ok = send_reduce(worker, ind)
+				}
+				if ok{
+					reduceChan <- ind
+					mr.idleChannel <- worker
+					return
+				}
+			}
+		}(i)
+	}
+
+	for i := 0; i < mr.nReduce; i++{
+		<- reduceChan
+	}
+
+	fmt.Println("Reduce is Done")
+
+
+
 	return mr.KillWorkers()
 }

@@ -133,7 +133,7 @@ func cleanup(mr *MapReduce) {
 	RemoveFile(mr.file)
 }
 
-func TestBasic(t *testing.T) {
+func TestBasic(t *testing.T) { 
 	fmt.Printf("Test: Basic mapreduce ...\n")
 	mr := setup()
 	for i := 0; i < 2; i++ {

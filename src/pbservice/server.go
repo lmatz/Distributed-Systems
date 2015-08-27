@@ -11,6 +11,8 @@ import "sync/atomic"
 import "os"
 import "syscall"
 import "math/rand"
+import "errors"
+// import "strconv"
 
 
 
@@ -22,12 +24,72 @@ type PBServer struct {
 	me         string
 	vs         *viewservice.Clerk
 	// Your declarations here.
+	content map[string] string
+	currentView 		viewservice.View
 }
 
+func (pb *PBServer) isPrimary() bool{
+	return pb.currentView.Primary == pb.me
+}
+
+func (pb *PBServer) isBackup() bool{
+	return pb.currentView.Backup == pb.me
+}
+
+func (pb *PBServer) hasPrimary() bool{
+	return pb.currentView.Primary != ""
+}
+
+func (pb *PBServer) hasBackup() bool{
+	return pb.currentView.Backup != ""
+}
+
+func (pb *PBServer) Forward(args *ForwardArgs) error {
+	if !pb.hasBackup(){
+		return nil
+	}
+	var reply ForwardReply
+	ok := call(pb.currentView.Backup, "PBServer.ProcessForward", args, &reply)
+	if !ok {
+		return errors.New("[Foward] failed to forward put")
+	}
+	return nil
+}
+
+func (pb *PBServer) ProcessForward(args *ForwardArgs, reply *ForwardReply) error{
+	pb.mu.Lock()
+
+	defer pb.mu.Unlock()
+
+	if !pb.isBackup(){
+		return errors.New("I'm not backup")
+	}
+
+	// if op == "Put" {
+		for key,value := range args.Content{
+			pb.content[key] = value
+		}
+	// } else {
+
+	// }
+
+	return nil
+}
 
 func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
 
 	// Your code here.
+	pb.mu.Lock()
+
+	defer pb.mu.Unlock()
+
+	if !pb.isPrimary() {
+		reply.Err = ErrWrongServer
+		return errors.New("[get] i'm not primary, received Get request")
+	}
+	reply.Value = pb.content[args.Key]
+
+	
 
 	return nil
 }
@@ -36,6 +98,47 @@ func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
 func (pb *PBServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 
 	// Your code here.
+	pb.mu.Lock()
+
+	defer pb.mu.Unlock()
+
+	if !pb.isPrimary() {
+		reply.Err = ErrWrongServer
+		return errors.New("I am not the primary server")
+	}
+
+	key, value := args.Key, args.Value
+
+	op := args.Op
+
+	client, uid := args.Me, args.UUID
+
+	if pb.content["seen."+client] == uid {
+		reply.PreviousValue = pb.content["oldreply." + client]
+		return nil
+	}
+
+	if op == "Put" {
+
+	} else if op == "Append" {
+		value = pb.content[key]+value
+	}
+
+	forwardArgs := &ForwardArgs{map[string]string{
+		key:value,
+		"seen."+client : uid,
+		"oldreply."+client : reply.PreviousValue,
+		}}
+
+	err := pb.Forward(forwardArgs)
+
+	if err != nil {
+		return errors.New("forward fail")
+	}
+
+	for keyT, valueT := range forwardArgs.Content{
+		pb.content[keyT] = valueT
+	}
 
 
 	return nil
@@ -51,6 +154,26 @@ func (pb *PBServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error 
 func (pb *PBServer) tick() {
 
 	// Your code here.
+	pb.mu.Lock()
+
+	defer pb.mu.Unlock()
+
+	view, err := pb.vs.Ping(pb.currentView.Viewnum)
+	if err!=nil {
+
+	}
+
+	needForward := view.Backup !="" && view.Backup!=pb.currentView.Backup && pb.isPrimary()
+
+	pb.currentView = view
+
+	if needForward {
+		// fmt.Println("process forward in tick")
+		// fmt.Println(pb.content)
+		pb.Forward(&ForwardArgs{Content:pb.content})
+	}
+
+	
 }
 
 // tell the server to shut itself down.
@@ -84,6 +207,7 @@ func StartServer(vshost string, me string) *PBServer {
 	pb.me = me
 	pb.vs = viewservice.MakeClerk(me, vshost)
 	// Your pb.* initializations here.
+	pb.content = map[string]string{}
 
 	rpcs := rpc.NewServer()
 	rpcs.Register(pb)
